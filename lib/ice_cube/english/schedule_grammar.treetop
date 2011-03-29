@@ -1,0 +1,26 @@
+require 'ice_cube/english/rule_grammar'
+
+module IceCube
+  module English
+    grammar ScheduleGrammar
+      include IceCube::English::RuleGrammar
+
+      # Multiple recurrence rules
+      rule recurrence_rules
+        first_rule:recurrence_rule rest_rules:( comma_or_semicolon_joiner recurrence_rule )* "."? {
+          def rules
+            [first_rule] + rest_rules
+          end
+
+          def rest_rules
+            super.elements.map{|r| r.recurrence_rule}
+          end
+
+          def attribute_hashes
+            rules.map{ |r| r.attributes }
+          end
+        }
+      end
+    end
+  end
+end

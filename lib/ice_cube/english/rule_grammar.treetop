@@ -1,0 +1,454 @@
+require 'ice_cube/english/grammar_helper'
+
+module IceCube
+  module English
+    grammar RuleGrammar
+      rule recurrence_rule
+        first_clause:recurrence_clause rest_clauses:( WS+ recurrence_clause )* {
+          def clauses
+            [first_clause] + rest_clauses
+          end
+
+          def rest_clauses
+            super.elements.map{|c| c.recurrence_clause}
+          end
+
+          def attributes
+            clause_attributes = []
+            clauses.each do |c|
+              clause_attributes << c.attributes
+            end
+
+            result = {:until => nil, :count => nil, :interval => 1, :validations => {}}
+            clause_attributes.each do |attributes|
+              GrammarHelper.deep_merge!(result, attributes)
+            end
+
+            # If :minute_of_hour is specified, make sure :second_of_minute is also specified.
+            if result[:validations][:minute_of_hour] and !result[:validations][:second_of_minute]
+              result[:validations][:second_of_minute] = [0]
+            end
+
+            # Make sure :rule_type is specified
+            unless result[:rule_type]
+              # XXX - Is this correct?  Is it necessary to differentiate between these cases?
+              v = result[:validations]
+              result[:rule_type] = "IceCube::SecondlyRule"
+              result[:rule_type] = "IceCube::MinutelyRule" if (v[:second_of_minute] && v[:second_of_minute].length == 1) || v[:minute_of_hour]
+              result[:rule_type] = "IceCube::HourlyRule" if (v[:minute_of_hour] && v[:minute_of_hour].length == 1) || v[:hour_of_day]
+              result[:rule_type] = "IceCube::DailyRule" if v[:hour_of_day] && v[:hour_of_day].length == 1 || v[:day] || v[:day_of_week]
+              result[:rule_type] = "IceCube::WeeklyRule" if (v[:day] ? v[:day].length : 0) + (v[:day_of_week] ? v[:day_of_week].length : 0) == 1 || v[:day_of_month]
+              result[:rule_type] = "IceCube::MonthlyRule" if (v[:day_of_week] && v[:day_of_week].values.map{|vv| vv.length}.inject{|a,b| a+b} == 1) || (v[:day_of_month] && v[:day_of_month].length == 1)
+            end
+            result
+          end
+        }
+      end
+
+      rule recurrence_clause
+        frequency / for_n_occurrences / on_the_nth_x_of_the_y / the_nth / at_minutes_past_the_hour / at_time_of_day / of_month
+      end
+
+      # e.g. "daily", "every 2 days", "every 2nd day", "every monday", "every 2 mondays"
+      rule frequency
+        direct_frequency / every_frequency
+      end
+
+      rule direct_frequency
+        ( "secondly" / "minutely" / "hourly" / "daily" / "weekly" / "monthly" / "yearly" / "annually" ) {
+          def attributes
+            { :rule_type => GrammarHelper::RULE_TYPES[text_value] }
+          end
+        }
+      end
+
+      # e.g. "every day", "every 2nd day", "every 2nd monday", "every monday", "every 2 mondays"
+      rule every_frequency
+        "every" WS+
+        n:( m:positive_integer_or_ordinal WS+ )?
+        unit:( "seconds" / "minutes" / "hours" / "days" / "weeks" / "months" / "years" /
+               "second" / "minute" / "hour" / "day" / "week" / "month" / "year" /
+               days_of_week )
+        {
+          def attributes
+            result = {}
+            result[:interval] = n.m.number unless n.empty?
+            if unit.respond_to?(:day_validations)   # days_of_week
+              result[:validations] = { :day => unit.day_validations }
+            else
+              result[:rule_type] = GrammarHelper::RULE_TYPES[unit.text_value]
+            end
+            result
+          end
+        }
+      end
+
+      rule days_of_week
+        first_day:day_of_week rest_days:( comma_joiner day_of_week )*
+        {
+          def days
+            [first_day] + rest_days
+          end
+
+          def rest_days
+            super.elements.map{|d| d.day_of_week}
+          end
+
+          def day_validations
+            days.map{|day_of_week| day_of_week.day_validation}
+          end
+        }
+      end
+
+      rule day_of_week
+        ( "sundays" / "mondays" / "tuesdays" / "wednesdays" / "thursdays" / "fridays" / "saturdays" /
+          "sunday" / "monday" / "tuesday" / "wednesday" / "thursday" / "friday" / "saturday" )
+        {
+          def day_validation
+            GrammarHelper::DAYS[text_value]
+          end
+        }
+      end
+
+      # e.g. "every second", "every 1 second", "every 2 seconds"
+      rule number_frequency
+        n:( positive_integer WS+ )? time_unit {
+          def attributes
+            { :rule_type => GrammarHelper::RULE_TYPES[time_unit.text_value], :interval => n.text_value.to_i }
+          end
+        }
+      end
+
+      rule for_n_occurrences
+        "for" WS+ positive_integer WS+ ( "occurrences" / "occurrence" ) {
+          def count
+            positive_integer.number
+          end
+
+          def attributes
+            { :count => count }
+          end
+        }
+      end
+
+      rule on_the_nth_x_of_the_y
+        "on" WS+ "the" WS+ ordinals WS+ ("seconds" / "second") WS+ "of" WS+ "the" WS+ "minute" {
+          def attributes
+            { :validations => {:second_of_minute => ordinals.numbers} }
+          end
+        }
+        /
+        "on" WS+ "the" WS+ ordinals WS+ ("minutes" / "minute") WS+ "of" WS+ "the" WS+ "hour" {
+          def attributes
+            { :validations => {:minute_of_hour => ordinals.numbers} }
+          end
+        }
+        /
+        "on" WS+ "the" WS+ lordinals WS+ ("days" / "day") WS+ "of" WS+ "the" WS+ "month" {
+          def attributes
+            { :validations => {:day_of_month => lordinals.numbers} }
+          end
+        }
+        /
+        "on" WS+ "the" WS+ lordinals WS+ days_of_week ( WS+ "of" WS+ "the" WS+ "month" )? {
+          def attributes
+            result = {}
+            days_of_week.days.each do |day_of_week|
+              GrammarHelper.deep_merge! result, { :validations => { :day_of_week => { GrammarHelper::DAYS_OF_WEEK[day_of_week.text_value] => lordinals.numbers } } }
+            end
+            result
+          end
+        }
+      end
+
+      # e.g. "the 13th"
+      rule the_nth
+        "the" WS+ ordinal {
+          def attributes
+            { :validations => {:day_of_month => [ordinal.number]} }
+          end
+        }
+      end
+
+      # e.g. "that falls in october", "of october", "in October"
+      rule of_month
+        ( "of" / "in" / "that" WS+ "falls" WS+ "in" ) WS+ month_names {
+          def attributes
+            { :validations => {:month_of_year => month_names.months_of_year} }
+          end
+        }
+      end
+
+      rule month_names
+        first_month_name:month_name rest_month_names:(comma_joiner month_name)* {
+          def month_names
+            [first_month_name] + rest_month_names
+          end
+
+          def rest_month_names
+            super.elements.map{|e| e.month_name}
+          end
+
+          def months_of_year
+            month_names.map{|m| GrammarHelper::MONTHS_OF_YEAR[m.text_value]}
+          end
+        }
+      end
+
+      rule month_name
+        ( "january" / "february" / "march" / "april" / "may" / "june" /
+          "july" / "august" / "september" / "october" / "november" / "december" )
+      end
+
+      # e.g. "at 15 minutes past the hour"
+      rule at_minutes_past_the_hour
+        "at" WS+ int60s WS+ "minutes" WS+ "past" WS+ "the" WS+ "hour" {
+          def attributes
+            { :validations => {:minute_of_hour => int60s.numbers} }
+          end
+        }
+      end
+
+      rule time_unit
+        "seconds" / "minutes" / "hours" / "days" / "weeks" / "months" / "years" /
+        "second" / "minute" / "hour" / "day" / "week" / "month" / "year"
+      end
+
+      rule ordinal
+        ( "first" / positive_integer ( "st" / "nd" / "rd" / "th" ) ) {
+          def number
+            if text_value == "first"
+              1
+            else
+              positive_integer.text_value.to_i
+            end
+          end
+        }
+      end
+
+      rule ordinals
+        first_ordinal:ordinal rest_ordinals:(comma_joiner ordinal)* {
+          def ordinals
+            [first_ordinal] + rest_ordinals
+          end
+
+          def rest_ordinals
+            super.elements.map{|e| e.ordinal}
+          end
+
+          def numbers
+            ordinals.map{|o| o.number}
+          end
+        }
+      end
+
+      # ordinal, including "last", "2nd last", etc.
+      rule lordinal
+        ( "first" / "last" / positive_integer ( "st" / "nd" / "rd" / "th" ) l:(WS+ "last")? ) {
+          def number
+            if text_value == "first"
+              1
+            elsif text_value == "last"
+              -1
+            elsif l.empty?
+              positive_integer.text_value.to_i
+            else
+              -(positive_integer.text_value.to_i)
+            end
+          end
+        }
+      end
+
+      rule lordinals
+        first_lordinal:lordinal rest_lordinals:(comma_joiner lordinal)* {
+          def lordinals
+            [first_lordinal] + rest_lordinals
+          end
+
+          def rest_lordinals
+            super.elements.map{|e| e.lordinal}
+          end
+
+          def numbers
+            lordinals.map{|o| o.number}
+          end
+        }
+      end
+
+      rule positive_integer_or_ordinal
+        ( "first" / positive_integer ( "st" / "nd" / "rd" / "th" )? ) {
+          def number
+            if text_value == "first"
+              1
+            else
+              positive_integer.text_value.to_i
+            end
+          end
+        }
+      end
+
+      rule nonnegative_integers
+        first_nonnegative_integer:nonnegative_integer rest_nonnegative_integers:(comma_joiner nonnegative_integer)* {
+          def nonnegative_integers
+            [first_nonnegative_integer] + rest_nonnegative_integers
+          end
+
+          def rest_nonnegative_integers
+            super.elements.map{|e| e.nonnegative_integer}
+          end
+
+          def numbers
+            nonnegative_integers.map{|n| n.number}
+          end
+        }
+      end
+
+      rule nonnegative_integer
+        "0" / positive_integer
+      end
+
+      rule positive_integer
+        [1-9] [0-9]* {
+          def number
+            text_value.to_i
+          end
+        }
+      end
+
+      rule at_time_of_day
+        "at" WS+ t:( twelve_noon_or_midnight / time12 / time24 ) {
+          def attributes
+            { :validations => { :hour_of_day => [t.hour], :minute_of_hour => [t.minute], :second_of_minute => [t.second] } }
+          end
+        }
+      end
+
+      # Time of day (24-hour clock)
+      rule time24
+        h:hour24 a:( ":" m:int60 b:( ":" s:int60 )? )?
+        {
+          def hour
+            h.text_value.to_i
+          end
+
+          def minute
+            return 0 if a.empty?
+            a.m.number
+          end
+
+          def second
+            return 0 if a.empty? or a.b.empty?
+            a.b.s.number
+          end
+        }
+      end
+
+      # Time of day (12-hour clock)
+      rule time12
+        h:hour12 a:( ":" m:int60 b:( ":" s:int60 )? )? WS* c:( "am" / "a.m." / "pm" / "p.m." ) {
+          def hour
+            hr = h.text_value.to_i
+            if c.text_value =~ /\Ap/
+              # PM
+              if hr == 12
+                12
+              else
+                hr + 12
+              end
+            else
+              # AM
+              if hr == 12
+                0
+              else
+                hr
+              end
+            end
+          end
+
+          def minute
+            return 0 if a.empty?
+            a.m.text_value.to_i
+          end
+
+          def second
+            return 0 if a.empty? or a.b.empty?
+            a.b.s.text_value.to_i
+          end
+        }
+      end
+
+      # Noon or midnight
+      rule twelve_noon_or_midnight
+        ( "12" ( ":" "00" ( ":" "00" )? )? WS+ )? a:( "noon" / "midnight") {
+          def hour
+            if a.text_value == "noon"
+              12
+            else
+              0
+            end
+          end
+
+          def minute
+            0
+          end
+
+          def second
+            0
+          end
+        }
+      end
+
+      # The numbers 1 though 12 (possibly padded to 2 digits)
+      rule hour12
+        "0" [1-9] / "10" / "11" / "12" / [1-9]
+      end
+
+      # The numbers 0 through 24 (possibly padded to 2 digits)
+      rule hour24
+        "0" [0-9] / "1" [0-9] / "2" [0-3] / [0-9]
+      end
+
+      # The numbers 0 through 59, always padded to 2 digits.
+      # Used for minutes or seconds.
+      rule int60s
+        first_int60:int60 rest_int60s:(comma_joiner int60)* {
+          def int60s
+            [first_int60] + rest_int60s
+          end
+
+          def rest_int60s
+            super.elements.map{|e| e.int60}
+          end
+
+          def numbers
+            int60s.map{ |n| n.number }
+          end
+        }
+      end
+
+      # The numbers 0 through 59, always padded to 2 digits.
+      # Used for minutes or seconds.
+      rule int60
+        [0-5] [0-9] {
+          def number
+            text_value.to_i
+          end
+        }
+      end
+
+      rule comma_joiner
+        (WS* "," WS* ("and" WS+)? / WS+ "and" WS+)
+      end
+
+      rule comma_or_semicolon_joiner
+        (WS* [,;] WS* ("and" WS+)? / WS+ "and" WS+)
+      end
+
+      # whitespace
+      rule WS
+        [ \t]
+      end
+    end
+  end
+end
+
