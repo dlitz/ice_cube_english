@@ -18,6 +18,6 @@ spec = Gem::Specification.new do |s|
   s.required_rubygems_version = ">= 1.3.6"
   s.extra_rdoc_files = %w( README.rdoc )
   s.add_runtime_dependency("treetop", ["~> 1.4.9"])
-  s.add_runtime_dependency("ice_cube", ["~> 0.6.6"])
+  s.add_runtime_dependency("ice_cube", [">= 0.6.6", "< 0.8"])
 
 end
