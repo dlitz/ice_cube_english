@@ -7,7 +7,7 @@ module IceCube
 
       # Multiple recurrence rules
       rule recurrence_rules
-        first_rule:recurrence_rule rest_rules:( comma_or_semicolon_joiner recurrence_rule )* "."? {
+        first_rule:recurrence_rule rest_rules:( comma_or_semicolon_joiner recurrence_rule )* "."? WS* {
           def rules
             [first_rule] + rest_rules
           end
