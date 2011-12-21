@@ -68,6 +68,8 @@ class IceCubeEnglishTest < Test::Unit::TestCase
     ["every monday,and every wednesday,and every friday.", [IceCube::Rule.weekly.day(:monday), IceCube::Rule.weekly.day(:wednesday), IceCube::Rule.weekly.day(:friday)]],
     ["every monday ;and every wednesday ;and every friday.", [IceCube::Rule.weekly.day(:monday), IceCube::Rule.weekly.day(:wednesday), IceCube::Rule.weekly.day(:friday)]],
     ["every monday ,and every wednesday ,and every friday.", [IceCube::Rule.weekly.day(:monday), IceCube::Rule.weekly.day(:wednesday), IceCube::Rule.weekly.day(:friday)]],
+    [" every monday ,and every wednesday ,and every friday.", [IceCube::Rule.weekly.day(:monday), IceCube::Rule.weekly.day(:wednesday), IceCube::Rule.weekly.day(:friday)]],
+    ["every monday ,and every wednesday ,and every friday. ", [IceCube::Rule.weekly.day(:monday), IceCube::Rule.weekly.day(:wednesday), IceCube::Rule.weekly.day(:friday)]],
 
     ["every monday, wednesday, and friday", [IceCube::Rule.daily.day(:monday, :wednesday, :friday)]],
     ["every day for 6 occurrences", [IceCube::Rule.daily.count(6)]],
@@ -138,6 +140,9 @@ class IceCubeEnglishTest < Test::Unit::TestCase
     ["every 2 hours on the 2nd second of the minute on the 45th minute of the hour", [IceCube::Rule.hourly(2).second_of_minute(2).minute_of_hour(45)]],
     ["at 45 minutes past the hour", [IceCube::Rule.hourly.minute_of_hour(45).second_of_minute(0)]],
     ["at 45 and 52 minutes past the hour", [IceCube::Rule.minutely.minute_of_hour(45).minute_of_hour(52).second_of_minute(0)]],
+    [" at 45 and 52 minutes past the hour", [IceCube::Rule.minutely.minute_of_hour(45).minute_of_hour(52).second_of_minute(0)]],
+    ["at 45 and 52 minutes past the hour ", [IceCube::Rule.minutely.minute_of_hour(45).minute_of_hour(52).second_of_minute(0)]],
+    ["at    45 and 52  minutes past  the hour", [IceCube::Rule.minutely.minute_of_hour(45).minute_of_hour(52).second_of_minute(0)]],
   ]
 
   tests.each_with_index do |t, i|

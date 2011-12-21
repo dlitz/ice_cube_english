@@ -4,7 +4,7 @@ module IceCube
   module English
     grammar RuleGrammar
       rule recurrence_rule
-        first_clause:recurrence_clause rest_clauses:( WS+ recurrence_clause )* {
+        WS* first_clause:recurrence_clause rest_clauses:( WS+ recurrence_clause )* WS* {
           def clauses
             [first_clause] + rest_clauses
           end
