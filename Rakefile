@@ -4,8 +4,8 @@ task :build => :test do
   system "gem build ice_cube_english.gemspec"
 end
 
-require 'rake/rdoctask'
-Rake::RDocTask.new do |t|
+require 'rdoc/task'
+RDoc::Task.new do |t|
   t.rdoc_files = Dir.glob(%w( README* MIT-LICENSE lib/**/*.rb *.rdoc )).uniq
   t.main = "README.rdoc"
   t.title = "scriptty - RDoc Documentation"
